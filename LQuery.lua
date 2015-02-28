@@ -5,16 +5,21 @@ local LQueryMethods = {
 	__boolean = {},
 	__number = {},
 	__userdata = {}
-}  
+}
 
 --> @table functions
-function LQueryMethods.__table.push(L_State, value)
-	table.insert(L_State.selector, value)
+function LQueryMethods.__table.push(L_State, ...)
+	for i, v in ipairs {...} do
+		table.insert(L_State.selector, v)
+	end
 	return L_State
 end
 
-function LQueryMethods.__table.pushKey(L_State, key, value)
-	L_State.selector[key] = value
+function LQueryMethods.__table.pushKey(L_State, ...)
+	local args = {...}
+	for i = 1, #args, 2 do
+		L_State.selector[i] = args[i + 1]
+	end
 	return L_State
 end
 
@@ -23,6 +28,7 @@ function LQueryMethods.__table.pop(L_State)
 	return L_State
 end
 
+--> note: cannot take varargs due to lua's table 'resizing' on remove
 function LQueryMethods.__table.popIndex(L_State, index)
 	if index > #L_State.selector then
 		error "Attempt to pop a nil value"
@@ -31,8 +37,10 @@ function LQueryMethods.__table.popIndex(L_State, index)
 	return L_State
 end
 
-function LQueryMethods.__table.popKey(L_State, key)
-	L_State.selector[key] = nil
+function LQueryMethods.__table.popKey(L_State, ...)
+	for i, v in pairs {...} do
+		L_State.selector[v] = nil
+	end
 	return L_State
 end
 
@@ -65,6 +73,69 @@ function LQueryMethods.__boolean.invert(L_State)
 	return not L_State.selector
 end
 
+--> @string functions
+function LQueryMethods.__string.push(L_State, append)
+	L_State.selector = L_State.selector .. tostring(append)
+	return L_State
+end
+
+function LQueryMethods.__string.byte(L_State)
+	L_State.selector = string.byte(L_State.selector)
+	return L_State
+end
+
+function LQueryMethods.__string.dump(L_State, callback)
+	L_State.selector = string.dump(L_State.selector, callback)
+	return L_State
+end
+
+function LQueryMethods.__string.find(L_State, pattern, start, shouldUsePattern)
+	return string.find(L_State.selector, pattern, start, shouldUsePattern)
+end
+
+function LQueryMethods.__string.format(L_State, pattern, ...)
+	L_State.selector = string.format(L_State.selector, pattern, ...)	
+	return L_State
+end
+
+function LQueryMethods.__string.gmatch(L_State, pattern)
+	return string.gmatch(L_State.selector, pattern)
+end
+
+function LQueryMethods.__string.gsub(L_State, replace)
+	L_State.selector = string.gsub(L_State.selector, replace)
+	return L_State
+end
+
+function LQueryMethods.__string.len(L_State, replace)
+	return string.len(L_State.selector)
+end
+
+function LQueryMethods.__string.lower(L_State)
+	L_State.selector = string.lower(L_State.selector)
+	return L_State
+end
+
+function LQueryMethods.__string.rep(L_State, iterations)
+	L_State.selector = string.rep(L_State.selector, iterations)
+	return L_State
+end
+
+function LQueryMethods.__string.reverse(L_State)
+	L_State.selector = string.reverse(L_State.selector)
+	return L_State
+end
+
+function LQueryMethods.__string.sub(L_State, start, finish)
+	L_State.selector = string.sub(L_State.selector, start, finish)
+	return L_State
+end
+
+function LQueryMethods.__string.upper(L_State)
+	L_State.selector = string.upper(L_State.selector)
+	return L_State
+end
+
 --> @LQuery metamethods: creates a new scope when called
 return setmetatable({}, {
 	__call = function(self, _selector)		
@@ -82,6 +153,9 @@ return setmetatable({}, {
 				return LQueryMethods["__" .. type(_self.selector)][funccall](_self, ...)
 			end,
 			__tostring = function(_self)
+				return tostring(_self.selector)
+			end,
+			__concat = function(_self)
 				return tostring(_self.selector)
 			end
 		})

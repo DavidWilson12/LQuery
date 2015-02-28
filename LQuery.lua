@@ -7,6 +7,9 @@ local LQueryMethods = {
 	__userdata = {}
 }
 
+--> store locations of tables: if already exists, don't create a new scope!
+local references = {}
+
 --> @table functions
 function LQueryMethods.__table.push(L_State, ...)
 	for i, v in ipairs {...} do
@@ -18,7 +21,7 @@ end
 function LQueryMethods.__table.pushKey(L_State, ...)
 	local args = {...}
 	for i = 1, #args, 2 do
-		L_State.selector[i] = args[i + 1]
+		L_State.selector[args[i]] = args[i + 1]
 	end
 	return L_State
 end
@@ -66,6 +69,19 @@ end
 
 function LQueryMethods.__table.concat(L_State, pattern)
 	return table.concat(L_State.selector, pattern)
+end
+
+function LQueryMethods.__table.filter(L_State, callback)
+	local index = {} --> make sure to safely remove the correct indexes by iterating backwards
+	for i, v in ipairs(L_State.selector) do
+		if not callback(v) then
+			table.insert(index, i)
+		end
+	end
+	for i = #index, 1, -1 do
+		table.remove(L_State.selector, i)
+	end
+	return L_State
 end
 
 --> @boolean functions
@@ -139,27 +155,41 @@ end
 --> @LQuery metamethods: creates a new scope when called
 return setmetatable({}, {
 	__call = function(self, _selector)		
-		local funccall;				
+		local funccall, scope;
 		
-		local scope = setmetatable({selector = _selector}, {
-			__index = function(_self, key)
-				funccall = key
-				return _self
-			end,
-			__call = function(_self, ...)
-				if LQueryMethods.__default[funccall] then
-					return LQueryMethods.__default[funccall](_self, ...)
-				end
-				return LQueryMethods["__" .. type(_self.selector)][funccall](_self, ...)
-			end,
-			__tostring = function(_self)
-				return tostring(_self.selector)
-			end,
-			__concat = function(_self)
-				return tostring(_self.selector)
-			end,
-			__mode = "kv"
-		})
+		if type(_selector) == "table" then
+			if references[tostring(_selector)] then
+				scope = references[tostring(_selector)]
+			end
+		end		
+		
+		if not scope then
+			scope = setmetatable({selector = _selector}, {
+				__index = function(_self, key)
+					funccall = key
+					return _self
+				end,
+				__call = function(_self, ...)
+					if LQueryMethods.__default[funccall] then
+						return LQueryMethods.__default[funccall](_self, ...)
+					end
+					return LQueryMethods["__" .. type(_self.selector)][funccall](_self, ...)
+				end,
+				__tostring = function(_self)
+					return tostring(_self.selector)
+				end,
+				__concat = function(_self)
+					return tostring(_self.selector)
+				end,
+				__mode = "kv"
+			})
+		end
+		
+		if type(_selector) == "table" then
+			if not references[tostring(_selector)] then
+				references[tostring(_selector)] = scope
+			end
+		end	
 		
 		return scope
 	end,

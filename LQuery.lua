@@ -157,7 +157,8 @@ return setmetatable({}, {
 			end,
 			__concat = function(_self)
 				return tostring(_self.selector)
-			end
+			end,
+			__mode = "kv"
 		})
 		
 		return scope

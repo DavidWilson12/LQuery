@@ -49,8 +49,7 @@ function LQueryMethods.__table.pushMetatable(L_State, metatable)
 end
 
 function LQueryMethods.__table.popMetatable(L_State)
-	setmetatable(L_State.selector, nil)
-	return L_State
+	return LQueryMethods.__table.pushMetatable(L_State.selector, nil)
 end
 
 function LQueryMethods.__table.getMetatable(L_State)
@@ -66,6 +65,7 @@ function LQueryMethods.__boolean.invert(L_State)
 	return not L_State.selector
 end
 
+--> @LQuery metamethods: creates a new scope when called
 return setmetatable({}, {
 	__call = function(self, _selector)		
 		local funccall;				

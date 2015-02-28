@@ -5,7 +5,7 @@ local LQueryMethods = {
 	__boolean = {},
 	__number = {},
 	__userdata = {}
-} 
+}  
 
 --> @table functions
 function LQueryMethods.__table.push(L_State, value)

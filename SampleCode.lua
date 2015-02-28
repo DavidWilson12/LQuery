@@ -1,4 +1,4 @@
-local lq = require(script.Parent.LQueryModule)
+local lq = require("LQuery")
 
 local array = {1, 5, 9, 20, 30}
 

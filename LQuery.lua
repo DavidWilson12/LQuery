@@ -84,6 +84,16 @@ function LQueryMethods.__table.filter(L_State, callback)
 	return L_State
 end
 
+function LQueryMethods.__table.popByValue(L_State, value)
+	for i, v in ipairs(L_State.selector) do
+		if v == value then
+			table.remove(L_State.selector, i)
+			return
+		end
+	end
+end
+
+
 --> @boolean functions
 function LQueryMethods.__boolean.invert(L_State)
 	return not L_State.selector

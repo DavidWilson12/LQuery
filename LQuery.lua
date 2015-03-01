@@ -66,7 +66,6 @@ function LQueryMethods.__default.parseHTML(html)
 	end
 	function parseBeginTag(_datatree)
 		inc()
-		local tags = 1
 		local block = ""
 		while space() and getchar() ~= ">" do
 			block = block .. getchar()

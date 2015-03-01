@@ -7,8 +7,119 @@ local LQueryMethods = {
 	__userdata = {}
 }
 
+--> simulate switch/case because Lua doesn't have it :(
+function switch(variable, callbacks)
+	for i, v in ipairs(callbacks) do
+		if variable == v[1] then
+			v[2]()
+			break
+		end
+	end
+	--> we're still here, resort to default if it exists
+	for i, v in ipairs(callbacks) do
+		if v[1] == "default" then
+			v[2]()
+		end
+	end
+end
+
 --> store locations of tables: if already exists, don't create a new scope!
 local references = {}
+
+--> dictionary that contains parents for HTML parsing
+local parents = {}
+
+--> @default functions (global functions that can be accessed without a selector!)
+function LQueryMethods.__default.pushParent(key, instance)
+	parents[key] = instance
+end
+
+function LQueryMethods.__default.popParent(key)
+	parents[key] = nil
+end
+
+function LQueryMethods.__default.getParent(key)
+	return parents[key] or error "That is not a valid HTML parent!"
+end
+
+--> note this is NOT done yet: the basics work, but frames inside of frames do not work yet
+function LQueryMethods.__default.parseHTML(html)
+	local index = 0
+	local inc, dec, space, getchar, parseBeginTag, rollback, peek, createTagTree, createInstaceFromTags;
+	function inc()
+		index = index + 1
+	end
+	function dec()
+		index = index - 1
+	end
+	function space()
+		return index < html:len()
+	end
+	function peek()
+		return html:sub(index + 1, index + 1)
+	end
+	function getchar()
+		return html:sub(index, index)
+	end
+	function rollback(_index)
+		index = _index
+	end
+	function parseBeginTag(_datatree)
+		inc()
+		local tags = 1
+		local block = ""
+		while space() and getchar() ~= ">" do
+			block = block .. getchar()
+			inc()
+		end
+		return block
+	end
+	function createTagTree(tags)
+		local tree = {}
+		for varname, varval in tags:gmatch("%s+(.-)=(.-);") do
+			tree[varname] = varval
+		end
+		tree.UI_TYPE = tags:sub(1, tags:find("%s")):gsub("%s+", "")
+		return tree
+	end
+	function createInstanceFromTags(tags)
+		local data = {}
+		for i, v in pairs(tags) do
+			if i == "Parent" then
+				data[i] = parents[v]
+			else
+				data[i] = loadstring("return " .. v)()
+			end
+		end
+		if data.Size then
+			data.Size = UDim2.new(0, data.Size.X, 0, data.Size.Y)
+		end
+		if data.Position then
+			data.Position = UDim2.new(0, data.Position.X, 0, data.Position.Y)
+		end
+		local frame = Instance.new(tags.UI_TYPE, data.Parent)
+		for i, v in pairs(data) do
+			if i ~= "UI_TYPE" then
+				frame[i] = v
+			end
+		end
+	end
+	while space() do
+		inc()
+		switch(getchar(), {
+			{"<", function()
+				if peek() ~= "/" then
+					local tags = createTagTree(parseBeginTag())
+					createInstanceFromTags(tags)
+					--> now we're at the end of the tag definition, scan the insides
+					if getchar() == ">" then
+						print "success"
+					end
+				end
+			end}
+		})
+	end
+end
 
 --> @table functions
 function LQueryMethods.__table.push(L_State, ...)
@@ -83,16 +194,6 @@ function LQueryMethods.__table.filter(L_State, callback)
 	end
 	return L_State
 end
-
-function LQueryMethods.__table.popByValue(L_State, value)
-	for i, v in ipairs(L_State.selector) do
-		if v == value then
-			table.remove(L_State.selector, i)
-			return
-		end
-	end
-end
-
 
 --> @boolean functions
 function LQueryMethods.__boolean.invert(L_State)
@@ -202,6 +303,9 @@ return setmetatable({}, {
 		end	
 		
 		return scope
+	end,
+	__index = function(self, key)
+		return LQueryMethods.__default[key] or error "Invalid LQuery global"
 	end,
 	 __metatable = {}
 })

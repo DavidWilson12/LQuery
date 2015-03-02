@@ -8,17 +8,17 @@ local LQueryMethods = {
 }
 
 --> simulate switch/case because Lua doesn't have it :(
-function switch(variable, callbacks)
-	for i, v in ipairs(callbacks) do
-		if variable == v[1] then
-			v[2]()
-			break
+function switch(variable)
+	return function(cases)
+		for i, v in pairs(cases) do
+			--> using tostring allows strings, numbers, and booleans to be compared
+			if tostring(variable) == tostring(i) then
+				v()
+				return
+			end
 		end
-	end
-	--> we're still here, resort to default if it exists
-	for i, v in ipairs(callbacks) do
-		if v[1] == "default" then
-			v[2]()
+		if cases.default then
+			cases.default()
 		end
 	end
 end
@@ -28,6 +28,12 @@ local references = {}
 
 --> dictionary that contains parents for HTML parsing
 local parents = {}
+
+--> dictionary containing the classes and ids of elements
+local userinterface = {
+	ids = {},
+	classes = {}	
+}
 
 --> @default functions (global functions that can be accessed without a selector!)
 function LQueryMethods.__default.pushParent(key, instance)
@@ -42,8 +48,8 @@ function LQueryMethods.__default.getParent(key)
 	return parents[key] or error "That is not a valid HTML parent!"
 end
 
---> note this is NOT done yet: the basics work, but frames inside of frames do not work yet
 function LQueryMethods.__default.parseHTML(html)
+	html = html:gsub("<!%-%-.-%-%->", "")
 	local index = 0
 	local inc, dec, space, getchar, parseBeginTag, rollback, peek, createTagTree, createInstaceFromTags;
 	function inc()
@@ -66,6 +72,7 @@ function LQueryMethods.__default.parseHTML(html)
 	end
 	function parseBeginTag(_datatree)
 		inc()
+		local tags = 1
 		local block = ""
 		while space() and getchar() ~= ">" do
 			block = block .. getchar()
@@ -75,7 +82,7 @@ function LQueryMethods.__default.parseHTML(html)
 	end
 	function createTagTree(tags)
 		local tree = {}
-		for varname, varval in tags:gmatch("%s+(.-)=(.-);") do
+		for varname, varval in tags:gmatch("%s+(.-)=\"(.-)\"") do
 			tree[varname] = varval
 		end
 		tree.UI_TYPE = tags:sub(1, tags:find("%s")):gsub("%s+", "")
@@ -87,7 +94,12 @@ function LQueryMethods.__default.parseHTML(html)
 			if i == "Parent" then
 				data[i] = parents[v]
 			else
-				data[i] = loadstring("return " .. v)()
+				local success, err = pcall(function() return loadstring("return " .. v)() end)
+				if success then
+					data[i] = loadstring("return " .. v)()
+				else
+					print("There was an error setting '" .. i .. "' to '" .. tostring(v) .. "'")
+				end
 			end
 		end
 		if data.Size then
@@ -98,25 +110,35 @@ function LQueryMethods.__default.parseHTML(html)
 		end
 		local frame = Instance.new(tags.UI_TYPE, data.Parent)
 		for i, v in pairs(data) do
-			if i ~= "UI_TYPE" then
+			if pcall(function() return frame[i] end) then
 				frame[i] = v
+			end
+		end
+		if tags.id then
+			userinterface.ids[tags.id] = frame
+		end
+		if tags.class then
+			if not userinterface.classes[tags.class] then
+				userinterface.classes[tags.class] = {frame}
+			else
+				table.insert(userinterface.classes[tags.class], frame)
 			end
 		end
 	end
 	while space() do
 		inc()
-		switch(getchar(), {
-			{"<", function()
+		switch(getchar()) {
+			["<"] = function()
 				if peek() ~= "/" then
 					local tags = createTagTree(parseBeginTag())
 					createInstanceFromTags(tags)
 					--> now we're at the end of the tag definition, scan the insides
 					if getchar() == ">" then
-						print "success"
+						
 					end
 				end
-			end}
-		})
+			end
+		}
 	end
 end
 
@@ -179,6 +201,15 @@ end
 
 function LQueryMethods.__table.concat(L_State, pattern)
 	return table.concat(L_State.selector, pattern)
+end
+
+function LQueryMethods.__table.addEvent(L_State, event, callback)
+	for i, v in ipairs(L_State.selector) do
+		v[event]:connect(function(...)
+			callback(v, ...)
+		end)
+	end
+	return L_State
 end
 
 function LQueryMethods.__table.filter(L_State, callback)
@@ -265,13 +296,28 @@ end
 --> @LQuery metamethods: creates a new scope when called
 return setmetatable({}, {
 	__call = function(self, _selector)		
-		local funccall, scope;
+		local funccall, scope;		
 		
 		if type(_selector) == "table" then
 			if references[tostring(_selector)] then
 				scope = references[tostring(_selector)]
 			end
-		end		
+		elseif type(_selector) == "string" then
+			if _selector:sub(1, 1) == "." then
+				local classname = _selector:sub(2)
+				if userinterface.classes[classname] then
+					_selector = {}
+					for i, v in ipairs(userinterface.classes[classname]) do
+						table.insert(_selector, v)
+					end
+				end
+			elseif _selector:sub(1, 1) == "#" then
+				local idname = _selector:sub(2)
+				if userinterface.ids[idname] then
+					_selector = {userinterface.ids[idname]}
+				end
+			end
+		end	
 		
 		if not scope then
 			scope = setmetatable({selector = _selector}, {

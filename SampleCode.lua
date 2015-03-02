@@ -42,9 +42,22 @@ lq(array).popByValue(500)
 local lq = require(script.Parent:WaitForChild("LQueryModule"))
 local screen = script.Parent:WaitForChild("ScreenGui"):WaitForChild("Screen")
 
---> add 'screen' to the database of parents that the parser can access
 lq.pushParent("screen", screen)
 
 lq.parseHTML [[
-	<Frame Size=Vector2.new(100, 100); Position=Vector2.new(100, 100); Rotation=45; Parent=screen;> </Frame>
+	<TextButton Size="Vector2.new(100, 100)" class="PRINT_CONTENTS_BUTTON" Parent="screen"> 
+		<!-- note that you cannot currently embed elements inside of elements -->
+	</TextButton>
+	
+	<TextButton Size="Vector2.new(200, 200)" Position="Vector2.new(300, 300)" BackgroundColor3="Color3.new(1, 0, 0)" class="PRINT_CONTENTS_BUTTON" Parent="screen">
+		
+	</TextButton>
 ]]
+
+lq(".PRINT_CONTENTS_BUTTON").addEvent("MouseButton1Click", function(this)
+	print(("BUTTON PROPERTIES:\n\tSize: %s\n\tPosition: %s\n\tParent: %s\n"):format(
+		tostring(this.Size), 
+		tostring(this.Position), 
+		tostring(this.Parent)
+	))
+end)

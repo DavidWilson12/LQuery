@@ -1,356 +1,271 @@
-local LQueryMethods = {
-	__default = {},
-	__table = {},
-	__string = {},
-	__boolean = {},
-	__number = {},
-	__userdata = {}
-}
+--[[
+	update=function(file)return(dofile("/Users/davidwilson/Documents/LuaFiles/"..((file)or"testing")..".lua"))end
+]]
 
---> simulate switch/case because Lua doesn't have it :(
-function switch(variable)
-	return function(cases)
-		for i, v in pairs(cases) do
-			--> using tostring allows strings, numbers, and booleans to be compared
-			if tostring(variable) == tostring(i) then
-				v()
-				return
-			end
-		end
-		if cases.default then
-			cases.default()
-		end
-	end
-end
-
---> store locations of tables: if already exists, don't create a new scope!
 local references = {}
 
---> dictionary that contains parents for HTML parsing
-local parents = {}
-
---> dictionary containing the classes and ids of elements
-local userinterface = {
-	ids = {},
-	classes = {}	
+local LQueryMethods = {
+	__without_selector = {},
+	__global = {},
+	__table = {},
+	__number = {},
+	__boolean = {},
+	__string = {},
+	__userdata = {}	
 }
 
---> @default functions (global functions that can be accessed without a selector!)
-function LQueryMethods.__default.pushParent(key, instance)
-	parents[key] = instance
+local function warn(message)
+	print("WARNING FROM LQUERY: " .. message)
 end
 
-function LQueryMethods.__default.popParent(key)
-	parents[key] = nil
+--!> FUNCTIONS THAT CAN BE CALLED DIRECTLY FROM LQ (no selector needed) <!--
+function LQueryMethods.__without_selector.create_stack()
+	local stack;
+	local inheritance = {}
+	inheritance.push_back = function(value)
+		rawset(stack, #stack + 1, value)
+	end
+	inheritance.push_forward = function(value)
+		for i = #stack, 1, -1 do
+			rawset(stack, i + 1, rawget(stack, i))
+		end
+		rawset(stack, 1, value)
+	end
+	inheritance.pop = function()
+		return table.remove(stack, #stack)
+	end
+	inheritance.pop_at = function(index)
+		if index > 0 then
+			return table.remove(stack, index)
+		end
+		return table.remove(stack, #stack + index + 1)
+	end
+	inheritance.get = function(index)
+		if index > 0 then
+			return rawget(stack, index)
+		end
+		return rawget(stack, #stack + index + 1)
+	end
+	stack = setmetatable({}, {__index = function(self, key)
+		return inheritance[key] or error("invalid stack operation '" .. key .. "'")
+	end})
+	return stack
 end
 
-function LQueryMethods.__default.getParent(key)
-	return parents[key] or error "That is not a valid HTML parent!"
+function LQueryMethods.__without_selector.execute_thread(func)
+	coroutine.wrap(func)()
 end
 
-function LQueryMethods.__default.parseHTML(html)
-	html = html:gsub("<!%-%-.-%-%->", "")
-	local index = 0
-	local inc, dec, space, getchar, parseBeginTag, rollback, peek, createTagTree, createInstaceFromTags;
-	function inc()
-		index = index + 1
-	end
-	function dec()
-		index = index - 1
-	end
-	function space()
-		return index < html:len()
-	end
-	function peek()
-		return html:sub(index + 1, index + 1)
-	end
-	function getchar()
-		return html:sub(index, index)
-	end
-	function rollback(_index)
-		index = _index
-	end
-	function parseBeginTag(_datatree)
-		inc()
-		local tags = 1
-		local block = ""
-		while space() and getchar() ~= ">" do
-			block = block .. getchar()
-			inc()
-		end
-		return block
-	end
-	function createTagTree(tags)
-		local tree = {}
-		for varname, varval in tags:gmatch("%s+(.-)=\"(.-)\"") do
-			tree[varname] = varval
-		end
-		tree.UI_TYPE = tags:sub(1, tags:find("%s")):gsub("%s+", "")
-		return tree
-	end
-	function createInstanceFromTags(tags)
-		local data = {}
-		for i, v in pairs(tags) do
-			if i == "Parent" then
-				data[i] = parents[v]
-			else
-				local success, err = pcall(function() return loadstring("return " .. v)() end)
-				if success then
-					data[i] = loadstring("return " .. v)()
-				else
-					print("There was an error setting '" .. i .. "' to '" .. tostring(v) .. "'")
-				end
-			end
-		end
-		if data.Size then
-			data.Size = UDim2.new(0, data.Size.X, 0, data.Size.Y)
-		end
-		if data.Position then
-			data.Position = UDim2.new(0, data.Position.X, 0, data.Position.Y)
-		end
-		local frame = Instance.new(tags.UI_TYPE, data.Parent)
-		for i, v in pairs(data) do
-			if pcall(function() return frame[i] end) then
-				frame[i] = v
-			end
-		end
-		if tags.id then
-			userinterface.ids[tags.id] = frame
-		end
-		if tags.class then
-			if not userinterface.classes[tags.class] then
-				userinterface.classes[tags.class] = {frame}
-			else
-				table.insert(userinterface.classes[tags.class], frame)
-			end
-		end
-	end
-	while space() do
-		inc()
-		switch(getchar()) {
-			["<"] = function()
-				if peek() ~= "/" then
-					local tags = createTagTree(parseBeginTag())
-					createInstanceFromTags(tags)
-					--> now we're at the end of the tag definition, scan the insides
-					if getchar() == ">" then
-						
-					end
-				end
-			end
-		}
-	end
+--!> GLOBAL FUNCTIONS (available to any selector type) <!--
+function LQueryMethods.__global.getval(L_State)
+	return L_State:__get()
 end
 
---> @table functions
-function LQueryMethods.__table.push(L_State, ...)
-	for i, v in ipairs {...} do
-		table.insert(L_State.selector, v)
+function LQueryMethods.__global.kill(L_State)
+	setmetatable(L_State, {
+		__mode = "kv",
+		__index = function() 
+			error "this has been garbage collected!" 
+		end
+	})
+	L_State = nil
+	L_State:__set(nil)
+	collectgarbage()
+	return nil
+end
+
+--!> NUMBER FUNCTIONS <!--
+function LQueryMethods.__number.apply_to_function(L_State, func)
+	L_State:__set(loadstring("return " .. func:gsub("x", L_State:__get()))())
+	return L_State
+end
+
+--!> TABLE FUNCTIONS <!--
+function LQueryMethods.__table.insert(L_State, ...)
+	for i, v in ipairs{...} do
+		table.insert(L_State:__get(), v)
 	end
 	return L_State
 end
 
-function LQueryMethods.__table.pushKey(L_State, ...)
+function LQueryMethods.__table.remove(L_State, ...)
 	local args = {...}
-	for i = 1, #args, 2 do
-		L_State.selector[args[i]] = args[i + 1]
+	table.sort(args, function(a, b)
+		return a > b
+	end)
+	for i, v in ipairs(args) do
+		table.remove(L_State:__get(), v)
 	end
 	return L_State
 end
 
-function LQueryMethods.__table.pop(L_State)
-	table.remove(L_State.selector, #L_State.selector)
-	return L_State
-end
-
---> note: cannot take varargs due to lua's table 'resizing' on remove
-function LQueryMethods.__table.popIndex(L_State, index)
-	if index > #L_State.selector then
-		error "Attempt to pop a nil value"
-	end
-	table.remove(L_State.selector, index)
-	return L_State
-end
-
-function LQueryMethods.__table.popKey(L_State, ...)
-	for i, v in pairs {...} do
-		L_State.selector[v] = nil
+function LQueryMethods.__table.remove_by_value(L_State, values)
+	for i, v in ipairs(L_State:__get()) do
+		for q, k in ipairs(values) do
+			if k == v then
+				table.remove(L_State:__get(), i)
+			end
+		end
 	end
 	return L_State
-end
-
-function LQueryMethods.__table.each(L_State, callback)
-	for i, v in pairs(L_State.selector) do
-		callback(v)
-	end
-	return L_State
-end
-
-function LQueryMethods.__table.pushMetatable(L_State, metatable)
-	setmetatable(L_State.selector, metatable)
-	return L_State
-end
-
-function LQueryMethods.__table.popMetatable(L_State)
-	return LQueryMethods.__table.pushMetatable(L_State.selector, nil)
-end
-
-function LQueryMethods.__table.getMetatable(L_State)
-	return getmetatable(L_State.selector)
 end
 
 function LQueryMethods.__table.concat(L_State, pattern)
-	return table.concat(L_State.selector, pattern)
+	return table.concat(L_State:__get(), pattern)
 end
 
-function LQueryMethods.__table.addEvent(L_State, event, callback)
-	for i, v in ipairs(L_State.selector) do
-		v[event]:connect(function(...)
-			callback(v, ...)
-		end)
-	end
-	return L_State
-end
-
-function LQueryMethods.__table.filter(L_State, callback)
-	local index = {} --> make sure to safely remove the correct indexes by iterating backwards
-	for i, v in ipairs(L_State.selector) do
-		if not callback(v) then
-			table.insert(index, i)
+function LQueryMethods.__table.cutoff(L_State, index)
+	local to_kill = {}
+	if index > 0 then
+		for i = 1, index do
+			table.insert(to_kill, i)
+		end
+	else
+		for i = 1, #L_State + index + 1 do
+			table.insert(to_kill, i)
 		end
 	end
-	for i = #index, 1, -1 do
-		table.remove(L_State.selector, i)
+	LQueryMethods.__table.remove(L_State, unpack(to_kill))
+end
+
+function LQueryMethods.__table.for_each(L_State, callback, should_pass_in_state)
+	for i, v in pairs(L_State:__get()) do
+		callback(should_pass_in_state and l(v) or v, i)
 	end
 	return L_State
 end
 
---> @boolean functions
-function LQueryMethods.__boolean.invert(L_State)
-	return not L_State.selector
-end
-
---> @string functions
-function LQueryMethods.__string.push(L_State, append)
-	L_State.selector = L_State.selector .. tostring(append)
+function LQueryMethods.__table.bind(L_State, event, callback)
+	if not getmetatable(L_State:__get()) then
+		setmetatable(L_State:__get(), {})
+	end
+	getmetatable(L_State:__get())["__" .. event] = callback
 	return L_State
 end
 
-function LQueryMethods.__string.byte(L_State)
-	L_State.selector = string.byte(L_State.selector)
-	return L_State
+function LQueryMethods.__table.get_all_children(L_State)
+	local children = {}
+	local scan;
+	function scan(parent)
+		for i, v in pairs(parent) do
+			if type(v) == "table" then
+				scan(v)
+			else
+				if not children[i] then
+					children[i] = v
+				else
+					table.insert(children, v)
+				end
+			end
+		end
+		return children
+	end
+	return scan(L_State:__get())
 end
 
-function LQueryMethods.__string.dump(L_State, callback)
-	L_State.selector = string.dump(L_State.selector, callback)
-	return L_State
+--> ROBLOX only functions, won't cause any errors if using standard Lua
+if Instance then
+	local http = game:GetService("HttpService")
+	
+	local function roblox_to_rproxy(url)
+		local old_url = url
+		url, matches = url:gsub("roblox.com", "rproxy.tk")
+		if matches > 0 then
+			warn("You're not allowed to send get/post requests to roblox.com.  Your link '" .. old_url .. "' was changed to '" .. url .. "'")
+		end
+		return url
+	end
+
+	function LQueryMethods.__without_selector.get(url, callback)
+		local source = http:GetAsync(roblox_to_rproxy(url), true)
+		if source then
+			callback(source)
+		end
+		return L_State
+	end
+
+	function LQueryMethods.__without_selector.post(url, data, content_type)
+		if http_enabled then
+			http:PostAsync(roblox_to_rproxy(url), data, content_type)
+		end
+		return L_State
+	end
+
+	function LQueryMethods.__without_selector.decode_json(json)
+		return http:JSONDecode(json)
+	end
+
+	function LQueryMethods.__without_selector.encode_json(data)
+		return http:JSONEncode(data)
+	end
+	
+	function LQueryMethods.__userdata.bind(L_State, event, callback)
+		L_State:__get()[event]:connect(function(...)
+			callback(L_State:__get(), ...)
+		end)
+		return L_State
+	end
+	
+	function LQueryMethods.__userdata.attr(L_State, attr_name, attr_value)
+		if type(attr_name) == "string" then
+			L_State:__get()[attr_name] = attr_value
+		elseif type(attr_name) == "table" then
+			for i, v in pairs(attr_name) do
+				L_State:__get()[i] = v
+			end
+		end
+		return L_State
+	end
 end
 
-function LQueryMethods.__string.find(L_State, pattern, start, shouldUsePattern)
-	return string.find(L_State.selector, pattern, start, shouldUsePattern)
-end
-
-function LQueryMethods.__string.format(L_State, pattern, ...)
-	L_State.selector = string.format(L_State.selector, pattern, ...)	
-	return L_State
-end
-
-function LQueryMethods.__string.gmatch(L_State, pattern)
-	return string.gmatch(L_State.selector, pattern)
-end
-
-function LQueryMethods.__string.gsub(L_State, replace)
-	L_State.selector = string.gsub(L_State.selector, replace)
-	return L_State
-end
-
-function LQueryMethods.__string.len(L_State, replace)
-	return string.len(L_State.selector)
-end
-
-function LQueryMethods.__string.lower(L_State)
-	L_State.selector = string.lower(L_State.selector)
-	return L_State
-end
-
-function LQueryMethods.__string.rep(L_State, iterations)
-	L_State.selector = string.rep(L_State.selector, iterations)
-	return L_State
-end
-
-function LQueryMethods.__string.reverse(L_State)
-	L_State.selector = string.reverse(L_State.selector)
-	return L_State
-end
-
-function LQueryMethods.__string.sub(L_State, start, finish)
-	L_State.selector = string.sub(L_State.selector, start, finish)
-	return L_State
-end
-
-function LQueryMethods.__string.upper(L_State)
-	L_State.selector = string.upper(L_State.selector)
-	return L_State
-end
-
---> @LQuery metamethods: creates a new scope when called
-return setmetatable({}, {
+l = setmetatable({}, {
 	__call = function(self, _selector)		
 		local funccall, scope;		
 		
-		if type(_selector) == "table" then
-			if references[tostring(_selector)] then
-				scope = references[tostring(_selector)]
+		if type(_selector) == "table" or type(_selector) == "userdata" then
+			if references[_selector] then
+				scope = references[_selector]
 			end
-		elseif type(_selector) == "string" then
-			if _selector:sub(1, 1) == "." then
-				local classname = _selector:sub(2)
-				if userinterface.classes[classname] then
-					_selector = {}
-					for i, v in ipairs(userinterface.classes[classname]) do
-						table.insert(_selector, v)
-					end
-				end
-			elseif _selector:sub(1, 1) == "#" then
-				local idname = _selector:sub(2)
-				if userinterface.ids[idname] then
-					_selector = {userinterface.ids[idname]}
-				end
-			end
-		end	
+		end
 		
 		if not scope then
-			scope = setmetatable({selector = _selector}, {
+			scope = setmetatable({__selector = _selector}, {
 				__index = function(_self, key)
 					funccall = key
 					return _self
 				end,
 				__call = function(_self, ...)
-					if LQueryMethods.__default[funccall] then
-						return LQueryMethods.__default[funccall](_self, ...)
+					if LQueryMethods.__global[funccall] then
+						return LQueryMethods.__global[funccall](_self, ...)
 					end
-					return LQueryMethods["__" .. type(_self.selector)][funccall](_self, ...)
-				end,
-				__tostring = function(_self)
-					return tostring(_self.selector)
+					return LQueryMethods["__" .. type(_self:__get())][funccall](_self, ...)
 				end,
 				__concat = function(_self)
-					return tostring(_self.selector)
-				end,
-				__mode = "kv"
+					return tostring(_self:__get())
+				end
 			})
+			function scope:__set(v)
+				self.__selector = v
+			end
+			function scope:__get()
+				return self.__selector
+			end
 		end
 		
-		if type(_selector) == "table" then
-			if not references[tostring(_selector)] then
-				references[tostring(_selector)] = scope
+		if type(_selector) == "table" or type(_selector) == "userdata" then
+			if not references[_selector] then
+				references[_selector] = scope
 			end
 		end	
 		
 		return scope
 	end,
 	__index = function(self, key)
-		return LQueryMethods.__default[key] or error "Invalid LQuery global"
+		return LQueryMethods.__without_selector[key] or error "Invalid LQuery global"
 	end,
 	 __metatable = {}
 })
+
+if Instance then
+	return l
+end
